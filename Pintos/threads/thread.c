@@ -24,6 +24,13 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* Estructuras creadas por nosotros*/
+
+//Lista de procesos en estado THREAD_BLOCKED.
+static struct list lista_bloqueados;
+
+/* Fin estructuras creadas por nosotros*/
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -91,6 +98,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&lista_bloqueados);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -582,3 +590,38 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/*Funciones declaradas por nosotros*/
+
+//Bloquea el thread actual, seteando el tiempo en el que debe despertar
+void
+dormir_thread(uint64_t ticks) {
+  enum intr_level old_level;
+  old_level = intr_disable();
+
+  struct thread *thread_actual = thread_current();
+  thread_actual->ticks_dormir = timer_ticks() + ticks;
+
+  list_push_back(&lista_bloqueados, &thread_actual->elem);
+  thread_block();
+
+  intr_set_level(old_level);
+}
+
+//Recorre la lista de threads bloqueados y pone en ready a los que debe despertar
+void
+despertar_threads(int64_t ticks_globales){
+  struct list_elem *elem_bloqueado = list_begin(&lista_bloqueados);
+  while(elem_bloqueado != list_end(&lista_bloqueados)) {
+    struct thread *thread_bloqueado= list_entry(elem_bloqueado, struct thread, elem);
+
+    if(ticks_globales >= thread_bloqueado->ticks_dormir){
+      elem_bloqueado = list_remove(elem_bloqueado);
+      thread_unblock(thread_bloqueado);
+    } else {
+      elem_bloqueado = list_next(elem_bloqueado);
+    }
+  }
+}
+
+/*Fin funciones declaradas por nosotros*/

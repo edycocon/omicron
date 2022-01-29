@@ -1,0 +1,10 @@
+Pintos/bochsrc.txt
+Pintos/threads/Make.vars
+Pintos/threads/Make.vars
+Pintos/utils/bochsrc.txt
+Pintos/utils/pintos
+Pintos/utils/pintos-gdb
+Pintos/utils/Pintos.pm
+Pintos/utils/setitimer-helper.o
+Pintos/utils/squish-pty.o
+Pintos/utils/squish-unix.o
