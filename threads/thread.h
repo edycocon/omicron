@@ -93,6 +93,7 @@ struct thread
    /* Estructuras creadas por nosotros*/
 
     uint64_t ticks_dormir;
+    int prioridad_original;              /* Prioridad original antes de una donacion.*/
 
    /*Fin estructuras creadas por nosoros*/
 
@@ -148,6 +149,8 @@ int thread_get_load_avg (void);
 
 void dormir_thread(uint64_t);
 void despertar_threads(int64_t);
+bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux);
+void ceder_a_mayor_prioridad(void);
 
 /*Fin funciones declaradas por nosotros*/
 

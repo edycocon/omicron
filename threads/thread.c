@@ -26,8 +26,8 @@ static struct list ready_list;
 
 /* Estructuras creadas por nosotros*/
 
-//Lista de procesos en estado THREAD_BLOCKED.
-static struct list lista_bloqueados;
+//Lista de procesos en estado THREAD_BLOCKED y esperando despertar.
+static struct list lista_dormidos;
 
 /* Fin estructuras creadas por nosotros*/
 
@@ -98,7 +98,7 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
-  list_init (&lista_bloqueados);
+  list_init (&lista_dormidos);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -208,6 +208,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  ceder_a_mayor_prioridad();
 
   return tid;
 }
@@ -245,7 +246,13 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  //Se insertan elementos de manera ordenada, segun su prioridad
+  struct thread *aux = NULL;
+  list_insert_ordered (&ready_list, &t->elem, tiene_menor_prioridad, &aux);
+
+  //list_push_back (&ready_list, &t->elem);
+  
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -315,8 +322,11 @@ thread_yield (void)
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+  if (cur != idle_thread) {
+    struct thread *aux = NULL;
+    list_insert_ordered (&ready_list, &cur->elem, tiene_menor_prioridad, &aux);
+    //list_push_back (&ready_list, &cur->elem);
+  }
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -344,6 +354,9 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  
+  //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
+  ceder_a_mayor_prioridad();
 }
 
 /* Returns the current thread's priority. */
@@ -602,7 +615,8 @@ dormir_thread(uint64_t ticks) {
   struct thread *thread_actual = thread_current();
   thread_actual->ticks_dormir = timer_ticks() + ticks;
 
-  list_push_back(&lista_bloqueados, &thread_actual->elem);
+  struct thread *aux = NULL;
+  list_insert_ordered (&lista_dormidos, &thread_actual->elem, tiene_menor_prioridad, &aux);
   thread_block();
 
   intr_set_level(old_level);
@@ -611,8 +625,8 @@ dormir_thread(uint64_t ticks) {
 //Recorre la lista de threads bloqueados y pone en ready a los que debe despertar
 void
 despertar_threads(int64_t ticks_globales){
-  struct list_elem *elem_bloqueado = list_begin(&lista_bloqueados);
-  while(elem_bloqueado != list_end(&lista_bloqueados)) {
+  struct list_elem *elem_bloqueado = list_begin(&lista_dormidos);
+  while(elem_bloqueado != list_end(&lista_dormidos)) {
     struct thread *thread_bloqueado= list_entry(elem_bloqueado, struct thread, elem);
 
     if(ticks_globales >= thread_bloqueado->ticks_dormir){
@@ -620,6 +634,24 @@ despertar_threads(int64_t ticks_globales){
       thread_unblock(thread_bloqueado);
     } else {
       elem_bloqueado = list_next(elem_bloqueado);
+    }
+  }
+}
+
+//Devuelve si el primer thread recibido es de menor prioridad que el segundo
+bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux) {
+
+  struct thread *threadA = list_entry(a, struct thread, elem);
+  struct thread *threadB = list_entry(b, struct thread, elem);;
+  
+  return threadB->priority < threadA->priority;
+}
+
+//Revisa si hay un proceso con mayor prioridad en la lista y hace yield si lo hay
+void ceder_a_mayor_prioridad(){
+  if(!list_empty(&ready_list)){
+    if(thread_get_priority() < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+      thread_yield();
     }
   }
 }
