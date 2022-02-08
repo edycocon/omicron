@@ -302,7 +302,15 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
   
   sema_init (&waiter.semaphore, 0);
+  
+  // Se insertan en orden de prioridad (Al final no funciono porque la funcion cond_menor_prioridad funciona solo si el
+  //sema_down se hace antes, ya que el sema_down es el que inserta a la cola de semaforos y necesitamos el thread en esas colas para ordenar)
+  
+  //struct semaphore_elem *aux = NULL;
+  //list_insert_ordered (&cond->waiters, &waiter.elem, cond_menor_prioridad, &aux);
+
   list_push_back (&cond->waiters, &waiter.elem);
+
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -323,9 +331,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
+  if (!list_empty (&cond->waiters)){
+    struct semaphore_elem *aux = NULL;
+    list_sort (&cond->waiters, cond_menor_prioridad, aux);
     sema_up (&list_entry (list_pop_front (&cond->waiters),
                           struct semaphore_elem, elem)->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -342,4 +353,17 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+
+//Devuelve si el primer thread recibido es de menor prioridad que el segundo
+bool cond_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux) {
+
+  struct semaphore semA = list_entry(a, struct semaphore_elem, elem)->semaphore;
+  struct semaphore semB = list_entry(b, struct semaphore_elem, elem)->semaphore;
+
+  struct thread *threadA = list_entry(list_front(&semA.waiters), struct thread, elem);
+  struct thread *threadB = list_entry(list_front(&semB.waiters), struct thread, elem);
+  
+  return threadB->priority < threadA->priority;
 }
