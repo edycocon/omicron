@@ -152,6 +152,9 @@ void despertar_threads(int64_t);
 bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux);
 void ceder_a_mayor_prioridad(void);
 
+void donar_prioridad(struct thread *t, int donada);
+void recuperar_prioridad_anterior(void);
+
 /*Fin funciones declaradas por nosotros*/
 
 #endif /* threads/thread.h */

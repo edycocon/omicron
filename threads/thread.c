@@ -353,7 +353,11 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  if(thread_current ()->prioridad_original == NULL){
+    thread_current ()->priority = new_priority;
+  } else {
+    thread_current ()->prioridad_original = new_priority;
+  }
   
   //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
   ceder_a_mayor_prioridad();
@@ -483,6 +487,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->prioridad_original = NULL;
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -511,10 +516,13 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  if (list_empty (&ready_list))
+  if (list_empty (&ready_list)) {
     return idle_thread;
-  else
+  }
+  else {
+    list_sort(&ready_list, tiene_menor_prioridad, NULL);
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -650,9 +658,22 @@ bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b,
 //Revisa si hay un proceso con mayor prioridad en la lista y hace yield si lo hay
 void ceder_a_mayor_prioridad(){
   if(!list_empty(&ready_list)){
+    list_sort(&ready_list, tiene_menor_prioridad, NULL);
     if(thread_get_priority() < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
       thread_yield();
     }
+  }
+}
+
+void donar_prioridad(struct thread *t, int donada){
+  t->prioridad_original = t->priority;
+  t->priority = donada;
+}
+
+void recuperar_prioridad_anterior(){
+  if(thread_current()->prioridad_original != NULL) {
+    thread_current()->priority = thread_current()->prioridad_original;
+    thread_current()->prioridad_original = NULL;
   }
 }
 
