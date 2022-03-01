@@ -94,6 +94,7 @@ struct thread
 
     uint64_t ticks_dormir;
     int prioridad_original;              /* Prioridad original antes de una donacion.*/
+    struct list lista_donadores;
 
    /*Fin estructuras creadas por nosoros*/
 
@@ -152,9 +153,9 @@ void despertar_threads(int64_t);
 bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux);
 void ceder_a_mayor_prioridad(void);
 
-void donar_prioridad(struct thread *t, int donada);
+void donar_prioridad(struct thread *receptor, struct thread *tdonador);
 void recuperar_prioridad_anterior(void);
-
+int thread_get_priority_original(void);
 /*Fin funciones declaradas por nosotros*/
 
 #endif /* threads/thread.h */
