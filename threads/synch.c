@@ -209,7 +209,14 @@ lock_acquire (struct lock *lock)
 
   if(lock->holder != NULL){
     if(lock->holder->priority < thread_get_priority()) {
-      donar_prioridad(lock->holder, thread_current ());
+
+      struct donacion *nueva_donacion = malloc(sizeof(struct donacion));
+
+      nueva_donacion->lock_responsable = lock;
+      nueva_donacion->prioridad = thread_get_priority();
+
+      list_push_back(&lock->holder->lista_donaciones, &nueva_donacion->elem_donacion);
+      donar_prioridad(lock->holder, thread_get_priority());
     }
   }
 
@@ -254,9 +261,30 @@ lock_release (struct lock *lock)
 
   old_level = intr_disable ();
 
-  //if(!list_empty(&lock->holder->lista_donadores)){
-    recuperar_prioridad_anterior();
-  //}
+  if(!list_empty(&lock->holder->lista_donaciones)){
+
+    struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones);
+    int donacion_maxima = -1;
+
+    while(elem_donate != list_end(&lock->holder->lista_donaciones)) {
+      struct donacion *donacion_actual= list_entry(elem_donate, struct donacion, elem_donacion);
+
+      if(donacion_actual->lock_responsable == lock){
+        elem_donate = list_remove(elem_donate);
+      } else {
+        if(donacion_actual->prioridad > donacion_maxima){
+          donacion_maxima = donacion_actual->prioridad;
+        }
+        elem_donate = list_next(elem_donate);
+      }
+    }
+    
+    if(donacion_maxima > -1) {
+      donar_prioridad(lock->holder, donacion_maxima);
+    } else {
+      recuperar_prioridad_original();
+    }
+  }
 
   lock->holder = NULL;
 

@@ -24,6 +24,13 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+struct donacion
+{
+   struct lock *lock_responsable;
+   int prioridad;
+   struct list_elem elem_donacion;
+};
+
 /* A kernel thread or user process.
 
    Each thread structure is stored in its own 4 kB page.  The
@@ -93,8 +100,9 @@ struct thread
    /* Estructuras creadas por nosotros*/
 
     uint64_t ticks_dormir;
+    bool tiene_donacion;
     int prioridad_original;              /* Prioridad original antes de una donacion.*/
-    struct list lista_donadores;
+    struct list lista_donaciones;
 
    /*Fin estructuras creadas por nosoros*/
 
@@ -153,8 +161,8 @@ void despertar_threads(int64_t);
 bool tiene_menor_prioridad(const struct list_elem *a, const struct list_elem *b, void *aux);
 void ceder_a_mayor_prioridad(void);
 
-void donar_prioridad(struct thread *receptor, struct thread *tdonador);
-void recuperar_prioridad_anterior(void);
+void donar_prioridad(struct thread *receptor, int prioridad_donada);
+void recuperar_prioridad_original(void);
 int thread_get_priority_original(void);
 /*Fin funciones declaradas por nosotros*/
 

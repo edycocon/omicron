@@ -353,13 +353,13 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
+  if(!thread_current()->tiene_donacion){
+    thread_current ()->priority = new_priority;
+  }
   thread_current ()->prioridad_original = new_priority;
 
-  if(list_empty(&thread_current()->lista_donadores)){
-    thread_current ()->priority = new_priority;
-    //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
-    ceder_a_mayor_prioridad();
-  }
+  //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
+  ceder_a_mayor_prioridad();
 }
 
 /* Returns the current thread's priority. */
@@ -486,11 +486,13 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->prioridad_original = priority;
-
-  list_init(&t->lista_donadores);
 
   t->magic = THREAD_MAGIC;
+
+  t->tiene_donacion = false;
+  t->prioridad_original = priority;
+
+  list_init(&t->lista_donaciones);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -667,26 +669,14 @@ void ceder_a_mayor_prioridad(){
   }
 }
 
-void donar_prioridad(struct thread *receptor, struct thread *tdonador){
-
-  list_push_front(&receptor->lista_donadores, &tdonador->elem);
-
-  receptor->priority = tdonador->priority;
+void donar_prioridad(struct thread *receptor, int prioridad_donada){
+  receptor->priority = prioridad_donada;
+  receptor->tiene_donacion = true;
 }
 
-void recuperar_prioridad_anterior(){
-  if(!list_empty(&thread_current()->lista_donadores)){
-    list_pop_front((&thread_current()->lista_donadores));
-  }
-
-  if(!list_empty(&thread_current()->lista_donadores)){
-    struct thread *donadoranterior = list_entry(list_front((&thread_current()->lista_donadores)), struct thread, elem);
-    thread_current()->priority = donadoranterior->priority;
-  }else{
-    thread_current()->priority = thread_current()->prioridad_original;
-    //thread_current()->prioridad_original = -1;
-  }
-  //ceder_a_mayor_prioridad();
+void recuperar_prioridad_original(){
+  thread_current()->priority = thread_current()->prioridad_original;
+  thread_current()->tiene_donacion = false;
 }
 
 int thread_get_priority_original(void){
