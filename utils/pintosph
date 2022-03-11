@@ -1,0 +1,83 @@
+#!/usr/bin/perl
+
+$green = "\033[32m";
+$red = "\033[31m";
+$yellow = "\033[33m";
+$blue = "\033[34m";
+$bold = "\033[1m";
+$reset = "\033[0m";
+$invert = "\033[7m";
+
+print "$invert================================================\n\n$reset";
+print $bold . "--CC7 Colorados--\n\n" . $reset;
+
+# Verifica si la $shell pasada hace match con el $name esperado
+sub check_shell {
+    local($shell, $name) = @_;
+    return (($shell =~ s/$name/gbenm/r) cmp $shell) != 0;
+}
+
+
+# Optener quién ejecutó el comando
+my $ppid = getppid();
+my $shell = `ps --no-headers -o cmd $ppid`;
+$shell = `which $shell`;
+
+# Que archivo se debe cambiar
+if (check_shell $shell, 'bash') {
+    $shrc = "$ENV{HOME}/.bashrc"
+} elsif (check_shell $shell, 'zsh') {
+    $shrc = "$ENV{HOME}/.zshrc"
+} else {
+    print $red . "Se soporta$bold$yellow Bash$reset$red y$bold$yellow Zsh$reset$red, agregue una condición\n";
+    print "nueva a pintosph si no tiene ninguno de los\n";
+    print "mencionados$reset\n";
+    exit;
+}
+
+
+print $blue."Archivo a modificar $bold$shrc$reset\n\n";
+
+
+open FH,  '+<',  $shrc or die "No se puede abrir $shrc -- $!";
+
+my $buffer = '';
+
+my $backup = undef;
+
+while( <FH> ) {
+    if ($_ =~ m/PINTOSPH=\".*\" # stop\@000001/) {
+        $buffer = $buffer . $_ =~ s/\".*\"/\"$ARGV[0]\"/r;
+        if (!$backup) {
+            $backup = 1;
+        }
+    } else {
+        $buffer = $buffer . $_;
+    }
+}
+
+if ($backup != undef) {
+    seek FH, 0, 0;
+    print FH $buffer;
+    truncate FH, length($buffer);
+
+    print $yellow . "-- Match line!\n". $green.$bold;
+    system "cat $shrc | grep '# stop\@000001'";
+    print $reset;
+
+    print "\n$bold"."IMPORTANTE:$reset esta es una nueva$bold$blue $shell$reset";
+    print "por lo que para regresar a la instancia anterior\n";
+    print "tendrá que ejecutar ${blue}${bold}exit${reset}.\n\n";
+
+    print "$invert================================================\n$reset";
+    close FH;
+    system($shell);
+} else {
+    print "${red}${bold}No match line!${reset}\n\n";
+    print "please add the follow lines to ${blue}${shrc}${yellow}${bold}:\n\n";
+    print "PINTOSPH=\"\" # stop\@000001\n";
+    print "export PINTOSPH\n\n";
+    print "${reset}$invert================================================\n$reset";
+    close FH;
+}
+
