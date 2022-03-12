@@ -492,7 +492,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->tiene_donacion = false;
   t->prioridad_original = priority;
 
-  list_init(&t->lista_donaciones);
+  list_init(&t->lista_donaciones_recibidas);
+  list_init(&t->lista_donaciones_realizadas);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

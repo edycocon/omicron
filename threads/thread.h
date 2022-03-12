@@ -27,7 +27,7 @@ typedef int tid_t;
 struct donacion
 {
    struct lock *lock_responsable;
-   int prioridad;
+   struct thread *donante_receptor;
    struct list_elem elem_donacion;
 };
 
@@ -101,8 +101,9 @@ struct thread
 
     uint64_t ticks_dormir;
     bool tiene_donacion;
-    int prioridad_original;              /* Prioridad original antes de una donacion.*/
-    struct list lista_donaciones;
+    int prioridad_original;                     /* Prioridad original antes de una donacion.*/
+    struct list lista_donaciones_recibidas;     /*Lista de donaciones recibidas*/
+    struct list lista_donaciones_realizadas;    /*Lista de donaciones realizadas*/
 
    /*Fin estructuras creadas por nosoros*/
 

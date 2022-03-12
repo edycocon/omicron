@@ -208,15 +208,38 @@ lock_acquire (struct lock *lock)
   old_level = intr_disable ();
 
   if(lock->holder != NULL){
-    if(lock->holder->priority < thread_get_priority()) {
+    if(lock->holder->priority < thread_get_priority()) {//Hay que hacer donacion
 
-      struct donacion *nueva_donacion = malloc(sizeof(struct donacion));
+      /*Se inserta en el thread holder la donacion que esta recibiendo*/
+      struct donacion *donacion_recibida = malloc(sizeof(struct donacion));
 
-      nueva_donacion->lock_responsable = lock;
-      nueva_donacion->prioridad = thread_get_priority();
+      donacion_recibida->lock_responsable = lock;
+      donacion_recibida->donante_receptor = thread_current();
 
-      list_push_back(&lock->holder->lista_donaciones, &nueva_donacion->elem_donacion);
+      list_push_back(&lock->holder->lista_donaciones_recibidas, &donacion_recibida->elem_donacion);
+
+      /*Se inserta en el current la donacion que esta haciendo*/
+      struct donacion *donacion_realizada = malloc(sizeof(struct donacion));
+
+      donacion_realizada->lock_responsable = lock;
+      donacion_realizada->donante_receptor = lock->holder;
+
+      list_push_back(&thread_current()->lista_donaciones_realizadas, &donacion_realizada->elem_donacion);
+
+      /*Se dona*/
       donar_prioridad(lock->holder, thread_get_priority());
+
+      struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_realizadas);
+
+      while(elem_donate != list_end(&lock->holder->lista_donaciones_realizadas)) {
+        struct donacion *donacion_realizada = list_entry(elem_donate, struct donacion, elem_donacion);
+
+        if(donacion_realizada->donante_receptor->priority < thread_get_priority()){
+          donacion_realizada->donante_receptor->priority = thread_get_priority();
+        }
+
+        elem_donate = list_next(elem_donate); 
+      }
     }
   }
 
@@ -261,28 +284,47 @@ lock_release (struct lock *lock)
 
   old_level = intr_disable ();
 
-  if(!list_empty(&lock->holder->lista_donaciones)){
+  int donacion_maxima = -1;
 
-    struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones);
-    int donacion_maxima = -1;
+  if(!list_empty(&lock->holder->lista_donaciones_recibidas)){ //Si el holder tiene donaciones recibidas
 
-    while(elem_donate != list_end(&lock->holder->lista_donaciones)) {
-      struct donacion *donacion_actual= list_entry(elem_donate, struct donacion, elem_donacion);
+    struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_recibidas);
 
-      if(donacion_actual->lock_responsable == lock){
+    /*Se recorren y eliminan las que pertenecen a este lock*/
+    while(elem_donate != list_end(&lock->holder->lista_donaciones_recibidas)) {
+      struct donacion *donacion_recibida= list_entry(elem_donate, struct donacion, elem_donacion);
+
+      if(donacion_recibida->lock_responsable == lock){
         elem_donate = list_remove(elem_donate);
       } else {
-        if(donacion_actual->prioridad > donacion_maxima){
-          donacion_maxima = donacion_actual->prioridad;
+        if(donacion_recibida->donante_receptor->priority > donacion_maxima){
+          donacion_maxima = donacion_recibida->donante_receptor->priority;
         }
         elem_donate = list_next(elem_donate);
       }
     }
-    
-    if(donacion_maxima > -1) {
-      donar_prioridad(lock->holder, donacion_maxima);
-    } else {
-      recuperar_prioridad_original();
+  }
+
+  if(donacion_maxima > -1) {
+    /*Se le da la donacion de la prioridad mayor recibida previamente*/
+    donar_prioridad(lock->holder, donacion_maxima);
+  } else {
+    /*Se restaura la prioridad original*/
+    recuperar_prioridad_original(); 
+  }
+  
+  if(!list_empty(&lock->holder->lista_donaciones_realizadas)){ //Si el holder tiene donaciones realizadas
+    struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_realizadas);
+
+    /*Se recorren y eliminan las que pertenecen a este lock*/
+    while(elem_donate != list_end(&lock->holder->lista_donaciones_realizadas)) {
+      struct donacion *donacion_realizada = list_entry(elem_donate, struct donacion, elem_donacion);
+
+      if(donacion_realizada->lock_responsable == lock){
+        elem_donate = list_remove(elem_donate);
+      } else {
+        elem_donate = list_next(elem_donate);
+      }
     }
   }
 
