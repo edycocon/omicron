@@ -229,24 +229,37 @@ lock_acquire (struct lock *lock)
       /*Se dona*/
       donar_prioridad(lock->holder, thread_get_priority());
 
-      struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_realizadas);
-
-      while(elem_donate != list_end(&lock->holder->lista_donaciones_realizadas)) {
-        struct donacion *donacion_realizada = list_entry(elem_donate, struct donacion, elem_donacion);
-
-        if(donacion_realizada->donante_receptor->priority < thread_get_priority()){
-          donacion_realizada->donante_receptor->priority = thread_get_priority();
-        }
-
-        elem_donate = list_next(elem_donate); 
-      }
+      buscar_donaciones_anteriores(lock->holder, thread_get_priority());
     }
   }
 
-  sema_down (&lock->semaphore);
+  sema_down (&lock->semaphore);//aqui esta T1 por L0, T2 por L1
   lock->holder = thread_current ();
 
   intr_set_level(old_level);
+}
+
+/*Funcion recursiva que recibe un thread, busca y dona prioridades en las donaciones realizadas por dicho thread
+y se manda a llamar a si misma enviando los threads a quienes les ha donado.
+
+La recursividad finalizará cuando se tenga un thread que ha recibido donacion pero nunca ha donado. */
+void 
+buscar_donaciones_anteriores(struct thread *thread, int prioridad_a_donar){
+  if(!list_empty(&thread->lista_donaciones_realizadas)){
+    struct list_elem *elem_donate = list_begin(&thread->lista_donaciones_realizadas);
+
+    while(elem_donate != list_end(&thread->lista_donaciones_realizadas)) {
+      struct donacion *donacion_realizada = list_entry(elem_donate, struct donacion, elem_donacion);
+
+      if(donacion_realizada->donante_receptor->priority < prioridad_a_donar){
+        donacion_realizada->donante_receptor->priority = prioridad_a_donar;
+
+        buscar_donaciones_anteriores(donacion_realizada->donante_receptor, prioridad_a_donar);
+      }
+
+      elem_donate = list_next(elem_donate); 
+    }
+  }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -296,6 +309,23 @@ lock_release (struct lock *lock)
 
       if(donacion_recibida->lock_responsable == lock){
         elem_donate = list_remove(elem_donate);
+
+        if(!list_empty(&donacion_recibida->donante_receptor->lista_donaciones_realizadas)){ //Si el receptor tiene donaciones realizadas
+
+          struct list_elem *elem_donate_eliminar = list_begin(&donacion_recibida->donante_receptor->lista_donaciones_realizadas);
+
+          /*Se recorren y eliminan las que pertenecen a este lock y el receptor es el thread actual*/
+          while(elem_donate_eliminar != list_end(&donacion_recibida->donante_receptor->lista_donaciones_realizadas)) {
+            struct donacion *donacion_eliminar= list_entry(elem_donate_eliminar, struct donacion, elem_donacion);
+
+            if(donacion_eliminar->lock_responsable == lock && donacion_eliminar->donante_receptor == thread_current()){
+              elem_donate_eliminar = list_remove(elem_donate_eliminar);
+            } else {
+              elem_donate_eliminar = list_next(elem_donate_eliminar);
+            }
+          }
+        }
+
       } else {
         if(donacion_recibida->donante_receptor->priority > donacion_maxima){
           donacion_maxima = donacion_recibida->donante_receptor->priority;
@@ -313,21 +343,6 @@ lock_release (struct lock *lock)
     recuperar_prioridad_original(); 
   }
   
-  if(!list_empty(&lock->holder->lista_donaciones_realizadas)){ //Si el holder tiene donaciones realizadas
-    struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_realizadas);
-
-    /*Se recorren y eliminan las que pertenecen a este lock*/
-    while(elem_donate != list_end(&lock->holder->lista_donaciones_realizadas)) {
-      struct donacion *donacion_realizada = list_entry(elem_donate, struct donacion, elem_donacion);
-
-      if(donacion_realizada->lock_responsable == lock){
-        elem_donate = list_remove(elem_donate);
-      } else {
-        elem_donate = list_next(elem_donate);
-      }
-    }
-  }
-
   lock->holder = NULL;
 
   sema_up (&lock->semaphore);
