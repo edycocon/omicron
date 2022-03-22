@@ -39,9 +39,12 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   //----Extraemos el nombre del programa a ejeuctar:
-  char* tmp_file_name = file_name;
+  char* tmp_file_name;
+  char* args;
+  strlcpy (tmp_file_name, file_name, PGSIZE);
   const char *exec_name = strtok_r(tmp_file_name, " ", &tmp_file_name);
-  
+  strlcpy (args, tmp_file_name, PGSIZE);
+
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (exec_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
@@ -200,11 +203,13 @@ struct Elf32_Phdr
 #define PF_W 2          /* Writable. */
 #define PF_R 4          /* Readable. */
 
-static bool setup_stack (void **esp);
+static bool setup_stack (void **esp, char* exec_name, char* args);
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
                           bool writable);
+
+#define WORD_SIZE 4
 
 /* Loads an ELF executable from FILE_NAME into the current thread.
    Stores the executable's entry point into *EIP
@@ -306,8 +311,15 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
 
+  char* tmp_file_name;
+  char* args;
+
+  strlcpy (tmp_file_name, file_name, PGSIZE);
+  char *exec_name = strtok_r(tmp_file_name, " ", &tmp_file_name);
+  strlcpy (args, tmp_file_name, PGSIZE);
+  
   /* Set up stack. */
-  if (!setup_stack (esp))
+  if (!setup_stack (esp, exec_name, args))
     goto done;
 
   /* Start address. */
@@ -432,7 +444,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a minimal stack by mapping a zeroed page at the top of
    user virtual memory. */
 static bool
-setup_stack (void **esp) 
+setup_stack (void **esp, char* exec_name, char* args) 
 {
   uint8_t *kpage;
   bool success = false;
@@ -441,9 +453,71 @@ setup_stack (void **esp)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
+      if (success) {
         *esp = PHYS_BASE;
-      else
+
+        //--Segun la guia hay un algoritmo de 8 pasos para configurar el stack
+        //1- Obtener el nombre de ejeucacion del programa de usuario:
+        //exec_name;
+
+        //2- Guardar los parámetros en el stack de manera invertida
+        char* setArgs = palloc_get_page (PAL_USER | PAL_ZERO);
+        char* tmpArgs = palloc_get_page (PAL_USER | PAL_ZERO);
+        char* token;
+        char* cpArgs;
+        void* argv0;
+        int noParam = 0;
+        int i = 0;
+        int word_align;
+
+        if(args){
+          strlcpy (cpArgs, args, PGSIZE);
+      
+          while ((token = strtok_r(cpArgs, " ", &cpArgs))) {
+            strlcpy(tmpArgs, token, PGSIZE);
+            strlcat(tmpArgs, " ", PGSIZE);
+            strlcat(tmpArgs, setArgs, PGSIZE);
+            strlcpy(setArgs, tmpArgs, PGSIZE);
+            ++noParam;
+          }
+        }
+        
+        void *paramAddr[noParam];
+
+        while (noParam > 0 && (token = strtok_r(setArgs, " ", &setArgs))){
+          *esp -= strlen(token);
+          memcpy(*esp, token, strlen(token));
+          paramAddr[i++] = *esp;
+        }
+
+        //3- Alinear a la palabra
+        word_align =  (-1 * (int)*esp) % 4;
+        *esp -= word_align;
+        memset(*esp, 0, word_align);
+        //4- Agregar el argmento 0
+        *esp -= WORD_SIZE;
+        memset (*esp, 0, WORD_SIZE);
+        //5- Guardar las direcciones de los parámetros en el stack
+        i = 0;
+        while (i < noParam)
+        {
+          *esp -= WORD_SIZE;
+          memcpy(*esp,  &paramAddr[i++], WORD_SIZE);
+        }
+        //6- Escribir la dirección de argv[0]
+        //¿Quien es argv[0]?
+        //*esp -= WORD_SIZE;
+        //memcpy(*esp, argv[0], WORD_SIZE);
+        //7- Escribir el número de argumentos
+        *esp -= WORD_SIZE;
+        memcpy(*esp, &noParam, WORD_SIZE);
+        //8- Escribe un puntero nulo como dirección de retorno
+        *esp -= WORD_SIZE;
+        memcpy(*esp, 0, WORD_SIZE);
+
+        return (0);
+
+      } else
         palloc_free_page (kpage);
     }
   return success;
