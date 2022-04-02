@@ -209,6 +209,10 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  #ifdef USERPROG
+    t->parent = thread_current();
+  #endif
+
   return tid;
 }
 
@@ -290,9 +294,10 @@ thread_exit (void)
 {
   ASSERT (!intr_context ());
 
-#ifdef USERPROG
-  process_exit ();
-#endif
+  #ifdef USERPROG
+    sema_up(&thread_current()->parent->wait_sema);
+    process_exit ();
+  #endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -475,6 +480,9 @@ init_thread (struct thread *t, const char *name, int priority)
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
+  #ifdef USERPROG
+    sema_init(&t->wait_sema, 0);
+  #endif
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
