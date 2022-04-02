@@ -208,7 +208,7 @@ lock_acquire (struct lock *lock)
   old_level = intr_disable ();
 
   if(lock->holder != NULL){
-    if(lock->holder->priority < thread_get_priority()) {//Hay que hacer donacion
+    if(lock->holder->priority < thread_get_priority() && !thread_mlfqs) {//Hay que hacer donacion
 
       /*Se inserta en el thread holder la donacion que esta recibiendo*/
       struct donacion *donacion_recibida = malloc(sizeof(struct donacion));
@@ -299,7 +299,7 @@ lock_release (struct lock *lock)
 
   int donacion_maxima = -1;
 
-  if(!list_empty(&lock->holder->lista_donaciones_recibidas)){ //Si el holder tiene donaciones recibidas
+  if(!list_empty(&lock->holder->lista_donaciones_recibidas) && !thread_mlfqs){ //Si el holder tiene donaciones recibidas
 
     struct list_elem *elem_donate = list_begin(&lock->holder->lista_donaciones_recibidas);
 
@@ -335,12 +335,14 @@ lock_release (struct lock *lock)
     }
   }
 
-  if(donacion_maxima > -1) {
-    /*Se le da la donacion de la prioridad mayor recibida previamente*/
-    donar_prioridad(lock->holder, donacion_maxima);
-  } else {
-    /*Se restaura la prioridad original*/
-    recuperar_prioridad_original(); 
+  if(!thread_mlfqs){
+    if(donacion_maxima > -1) {
+      /*Se le da la donacion de la prioridad mayor recibida previamente*/
+      donar_prioridad(lock->holder, donacion_maxima);
+    } else {
+      /*Se restaura la prioridad original*/
+      recuperar_prioridad_original(); 
+    }
   }
   
   lock->holder = NULL;

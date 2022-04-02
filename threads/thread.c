@@ -15,6 +15,9 @@
 #include "userprog/process.h"
 #endif
 
+//mlfqs varibles globales
+static int load_avg;
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -102,6 +105,7 @@ thread_init (void)
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
+  load_avg = 0;
   initial_thread = running_thread ();
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
@@ -353,13 +357,15 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority)
 {
-  if(!thread_current()->tiene_donacion){
-    thread_current ()->priority = new_priority;
-  }
-  thread_current ()->prioridad_original = new_priority;
+  if(!thread_mlfqs){
+    if(!thread_current()->tiene_donacion){
+      thread_current ()->priority = new_priority;
+    }
+    thread_current ()->prioridad_original = new_priority;
 
-  //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
-  ceder_a_mayor_prioridad();
+    //Si el thread actual, ya con la prioridad cambiada tiene menor prioridad que el mayor de la lista, se libera el procesador para que sea tomado
+    ceder_a_mayor_prioridad();
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -371,33 +377,43 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED)
+thread_set_nice (int nice)
 {
-  /* Not yet implemented. */
+  struct thread *actual = thread_current();
+
+  actual->nice = nice;
+
+  //Convertimos los enteros a punto fijo (*F), restamos y regresamos a entero, truncando (/F)
+  //formula original: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+  int sustraendo = fijo_a_entero_truncado(dividir_fijo_entero(actual->recent_cpu, 4));
+
+  int new_priority = PRI_MAX - sustraendo - actual->nice*2;
+  actual->priority = new_priority > PRI_MAX ? PRI_MAX : new_priority < PRI_MIN ? PRI_MIN : new_priority;
+
+  ceder_a_mayor_prioridad();
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  int new_avg = multiplicar_fijo_entero(load_avg, 100);
+  
+  return fijo_a_entero_redondeado(new_avg);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void)
 {
-  /* Not yet implemented. */
-  return 0;
+  return fijo_a_entero_redondeado(multiplicar_fijo_entero(thread_current()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -485,12 +501,37 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = priority;
+
+  if(!thread_mlfqs){
+    t->priority = priority;
+    t->prioridad_original = priority;
+  } else if(t == initial_thread){
+    t->nice = 0;
+    t->recent_cpu = 0;
+
+    //Convertimos los enteros a punto fijo (*F), restamos y regresamos a entero, truncando (/F)
+    //formula original: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+    int sustraendo = fijo_a_entero_truncado(dividir_fijo_entero(t->recent_cpu, 4));
+
+    int new_priority = PRI_MAX - sustraendo - t->nice*2;
+    t->priority = new_priority > PRI_MAX ? PRI_MAX : new_priority < PRI_MIN ? PRI_MIN : new_priority;
+  } else {
+    struct thread *actual = thread_current();
+    
+    t->nice = actual->nice;
+    t->recent_cpu = actual->recent_cpu;
+    
+    //Convertimos los enteros a punto fijo (*F), restamos y regresamos a entero, truncando (/F)
+    //formula original: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+    int sustraendo = fijo_a_entero_truncado(dividir_fijo_entero(t->recent_cpu, 4));
+
+    int new_priority = PRI_MAX - sustraendo - t->nice*2;
+    t->priority = new_priority > PRI_MAX ? PRI_MAX : new_priority < PRI_MIN ? PRI_MIN : new_priority;
+  }
 
   t->magic = THREAD_MAGIC;
 
   t->tiene_donacion = false;
-  t->prioridad_original = priority;
 
   list_init(&t->lista_donaciones_recibidas);
   list_init(&t->lista_donaciones_realizadas);
@@ -671,18 +712,123 @@ void ceder_a_mayor_prioridad(){
 }
 
 void donar_prioridad(struct thread *receptor, int prioridad_donada){
-  receptor->priority = prioridad_donada;
-  receptor->tiene_donacion = true;
+  if(!thread_mlfqs){
+    receptor->priority = prioridad_donada;
+    receptor->tiene_donacion = true;
+  }
 }
 
 void recuperar_prioridad_original(){
-  thread_current()->priority = thread_current()->prioridad_original;
-  thread_current()->tiene_donacion = false;
+  if(!thread_mlfqs){
+    thread_current()->priority = thread_current()->prioridad_original;
+    thread_current()->tiene_donacion = false;
+  }
 }
 
 int thread_get_priority_original(void){
   return thread_current()->prioridad_original;
 }
 
+//mlfqs
+
+void thread_calcular_recent_cpu(){
+  struct thread *t = thread_current ();
+
+  if(t != idle_thread && t->status == THREAD_RUNNING){
+    t->recent_cpu = sumar_fijo_entero(t->recent_cpu, 1);
+  }
+}
+
+void thread_calcular_priorities(){
+  struct list_elem *elem_t = list_begin(&all_list);
+  while(elem_t != list_end(&all_list)) {
+    struct thread *t= list_entry(elem_t, struct thread, elem);
+
+    if(t != idle_thread){
+
+      //Convertimos los enteros a punto fijo (*F), restamos y regresamos a entero, truncando (/F)
+      //formula original: priority = PRI_MAX - (recent_cpu / 4) - (nice * 2)
+      int sustraendo = fijo_a_entero_truncado(dividir_fijo_entero(t->recent_cpu, 4));
+
+      int new_priority = PRI_MAX - sustraendo - t->nice*2;
+      t->priority = new_priority > PRI_MAX ? PRI_MAX : new_priority < PRI_MIN ? PRI_MIN : new_priority;
+    }
+
+    elem_t = list_next(elem_t);
+  }
+
+
+  if(!list_empty(&ready_list)){
+    list_sort(&ready_list, tiene_menor_prioridad, NULL);
+  }
+}
+
+void thread_calcular_recent_cpus(){
+    int offset = thread_current() == idle_thread ? 0 : 1;
+
+    //Todas las constantes no enteras se vuelven punto fijo, luego se multiplican y suman según la formula.
+    //Recordar que en la primera parte de la formula, al multiplicar puntos fijos se debe dividir entre F para ajustar el punto.
+    //formula original: load_avg = (59/60)*load_avg + (1/60)*ready_threads
+
+    int primer_sumando = multiplicar_fijo_fijo(dividir_fijo_fijo(entero_a_fijo(59), entero_a_fijo(60)), load_avg);
+    int segundo_sumando = multiplicar_fijo_entero(dividir_fijo_fijo(entero_a_fijo(1), entero_a_fijo(60)), list_size(&ready_list) + offset);
+
+    int new_avg = primer_sumando + segundo_sumando;
+    load_avg = new_avg;
+
+
+  if(thread_current() != idle_thread){
+    struct list_elem *elem_t = list_begin(&all_list);
+    while(elem_t != list_end(&all_list)) {
+      struct thread *t= list_entry(elem_t, struct thread, elem);
+
+      //Recordar que en la primera parte de la formula, al dividir puntos fijos se debe multiplicar por F para ajustar el punto.
+      //En la segunda parte, al multiplicar se debe dividir entre F para ajustar el punto.
+      //formula original: recent_cpu = (2*load_avg)/(2*load_avg + 1) * recent_cpu + nice
+      int dividendo = multiplicar_fijo_entero(new_avg,2);
+      int divisor = sumar_fijo_entero(multiplicar_fijo_entero(new_avg, 2), 1);
+
+      int division = dividir_fijo_fijo(dividendo, divisor);
+      int multiplicacion = multiplicar_fijo_fijo(division, t->recent_cpu);
+
+      t->recent_cpu = sumar_fijo_entero(multiplicacion, t->nice);
+      
+      elem_t = list_next(elem_t);
+    }
+  }
+}
+
+//Operaciones punto fijo
+int entero_a_fijo(int n){
+  return n*F;
+}
+
+int fijo_a_entero_truncado(int n){
+  return n/F;
+}
+
+int sumar_fijo_entero(int x, int n){
+  return x + n*F;
+}
+
+int multiplicar_fijo_entero(int x, int n){
+  return x * n;
+}
+
+int dividir_fijo_entero(int x, int n){
+  return x / n;
+}
+
+int dividir_fijo_fijo(int x, int y){
+  return ((int64_t) x) * F / y;
+}
+
+int multiplicar_fijo_fijo(int x, int y){
+  return ((int64_t) x) * y / F;
+}
+
+int fijo_a_entero_redondeado(int x){
+  return x > 0 ? (x + F / 2) / F : (x - F / 2) / F ;
+}
 
 /*Fin funciones declaradas por nosotros*/

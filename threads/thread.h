@@ -24,6 +24,8 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define F 16384                         /* 2**14 para el manejo de punto fijo */
+
 struct donacion
 {
    struct lock *lock_responsable;
@@ -95,6 +97,7 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    int priority2;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
 
    /* Estructuras creadas por nosotros*/
@@ -104,6 +107,10 @@ struct thread
     int prioridad_original;                     /* Prioridad original antes de una donacion.*/
     struct list lista_donaciones_recibidas;     /*Lista de donaciones recibidas*/
     struct list lista_donaciones_realizadas;    /*Lista de donaciones realizadas*/
+
+    //mlfqs
+    int nice;
+    int recent_cpu;
 
    /*Fin estructuras creadas por nosoros*/
 
@@ -165,6 +172,29 @@ void ceder_a_mayor_prioridad(void);
 void donar_prioridad(struct thread *receptor, int prioridad_donada);
 void recuperar_prioridad_original(void);
 int thread_get_priority_original(void);
+
+//mlfqs
+void thread_calcular_recent_cpu(void);
+void thread_calcular_priorities(void);
+void thread_calcular_recent_cpus(void);
+
+//Operaciones punto fijo
+int entero_a_fijo(int n);
+
+int fijo_a_entero_truncado(int n);
+
+int sumar_fijo_entero(int x, int n);
+
+int multiplicar_fijo_entero(int x, int n);
+
+int dividir_fijo_entero(int x, int n);
+
+int dividir_fijo_fijo(int x, int y);
+
+int multiplicar_fijo_fijo(int x, int y);
+
+int fijo_a_entero_redondeado(int x);
+
 /*Fin funciones declaradas por nosotros*/
 
 #endif /* threads/thread.h */
