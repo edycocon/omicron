@@ -8,3 +8,6 @@ Pintos/utils/Pintos.pm
 Pintos/utils/setitimer-helper.o
 Pintos/utils/squish-pty.o
 Pintos/utils/squish-unix.o
+pintos.checker.cjs
+.github/pintos-results/index.js
+.vscode/launch.json
