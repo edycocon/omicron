@@ -39,16 +39,20 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   //----Extraemos el nombre del programa a ejeuctar:
-  char* tmp_file_name;
-  char* args;
-  strlcpy (tmp_file_name, file_name, PGSIZE);
-  const char *exec_name = strtok_r(tmp_file_name, " ", &tmp_file_name);
-  strlcpy (args, tmp_file_name, PGSIZE);
+  char *tmp_file_name, *exec_name;
+  //tmp_file_name = palloc_get_page(0);
+
+  if (tmp_file_name == NULL)
+    return TID_ERROR;
+
+  //strlcpy (tmp_file_name, file_name, PGSIZE);
+  exec_name = strtok_r(fn_copy, " ", &tmp_file_name);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (exec_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    palloc_free_page (fn_copy);
+    //palloc_free_page (tmp_file_name);  
   return tid;
 }
 
@@ -311,8 +315,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
 
-  char* tmp_file_name;
-  char* args;
+  char* tmp_file_name, args;
+  tmp_file_name = palloc_get_page(0);
+  args = palloc_get_page(0);
 
   strlcpy (tmp_file_name, file_name, PGSIZE);
   char *exec_name = strtok_r(tmp_file_name, " ", &tmp_file_name);
@@ -461,14 +466,14 @@ setup_stack (void **esp, char* exec_name, char* args)
         //exec_name;
 
         //2- Guardar los parámetros en el stack de manera invertida
-        char* setArgs = palloc_get_page (PAL_USER | PAL_ZERO);
-        char* tmpArgs = palloc_get_page (PAL_USER | PAL_ZERO);
-        char* token;
-        char* cpArgs;
-        void* argv0;
+        char *setArgs, *tmpArgs, *token, *cpArgs;
+        void *argv0;
         int noParam = 0;
         int i = 0;
         int word_align;
+
+        setArgs = palloc_get_page (PAL_USER | PAL_ZERO);
+        tmpArgs = palloc_get_page (PAL_USER | PAL_ZERO);
 
         if(args){
           strlcpy (cpArgs, args, PGSIZE);
@@ -482,11 +487,11 @@ setup_stack (void **esp, char* exec_name, char* args)
           }
         }
 
-        void *paramAddr[noParam];
+        void *paramAddr[noParam + 1];
 
         while (noParam > 0 && (token = strtok_r(setArgs, " ", &setArgs))){
-          *esp -= strlen(token);
-          memcpy(*esp, token, strlen(token));
+          *esp -= strlen(token)+1;
+          memcpy(*esp, token, strlen(token) + 1);
           paramAddr[i++] = *esp;
         }
 
@@ -505,9 +510,9 @@ setup_stack (void **esp, char* exec_name, char* args)
           memcpy(*esp,  &paramAddr[i++], WORD_SIZE);
         }
         //6- Escribir la dirección de argv[0]
-        //¿Quien es argv[0]?
-        //*esp -= WORD_SIZE;
-        //memcpy(*esp, argv[0], WORD_SIZE);
+        argv0 = *esp;
+        *esp -= WORD_SIZE;
+        memcpy(*esp, &argv0, WORD_SIZE);
         //7- Escribir el número de argumentos
         *esp -= WORD_SIZE;
         memcpy(*esp, &noParam, WORD_SIZE);
