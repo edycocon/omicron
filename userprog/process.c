@@ -315,16 +315,24 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
 
-  char* tmp_file_name, args;
-  tmp_file_name = palloc_get_page(0);
-  args = palloc_get_page(0);
 
-  strlcpy (tmp_file_name, file_name, PGSIZE);
-  char *exec_name = strtok_r(tmp_file_name, " ", &tmp_file_name);
-  strlcpy (args, tmp_file_name, PGSIZE);
+  char *fn_copy = palloc_get_page (0);
+  if (fn_copy == NULL)
+    return TID_ERROR;
+  strlcpy (fn_copy, file_name, PGSIZE);
+
+  //----Extraemos el nombre del programa a ejeuctar:
+  char *tmp_file_name, *exec_name;
+  //tmp_file_name = palloc_get_page(0);
+
+  if (tmp_file_name == NULL)
+    return TID_ERROR;
+
+  //strlcpy (tmp_file_name, file_name, PGSIZE);
+  exec_name = strtok_r(fn_copy, " ", &tmp_file_name);
 
   /* Set up stack. */
-  if (!setup_stack (esp, exec_name, args))
+  if (!setup_stack (esp, exec_name, fn_copy))
     goto done;
 
   /* Start address. */
