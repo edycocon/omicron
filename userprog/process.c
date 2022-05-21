@@ -28,31 +28,27 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
 tid_t
 process_execute (const char *file_name) 
 {
-  char *fn_copy;
+  char *exec_name;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-  fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
+  exec_name = palloc_get_page (0);
+  if (exec_name == NULL) {
     return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
+  }
+  strlcpy (exec_name, file_name, PGSIZE);
 
   //----Extraemos el nombre del programa a ejeuctar:
-  char *tmp_file_name, *exec_name;
-  //tmp_file_name = palloc_get_page(0);
+  char *tmp_file_name;
 
-  if (tmp_file_name == NULL)
-    return TID_ERROR;
-
-  //strlcpy (tmp_file_name, file_name, PGSIZE);
-  exec_name = strtok_r(fn_copy, " ", &tmp_file_name);
+  strtok_r(exec_name, " ", &tmp_file_name);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (exec_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy);
-    //palloc_free_page (tmp_file_name);  
+  tid = thread_create (exec_name, PRI_DEFAULT, start_process, file_name);
+  if (tid == TID_ERROR) {
+    palloc_free_page (exec_name);
+  } 
   return tid;
 }
 
@@ -225,6 +221,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
+  char *fname = (char*) file_name;
   off_t file_ofs;
   bool success = false;
   int i;
@@ -235,11 +232,21 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  char *exec_name = palloc_get_page (0);
+  if (exec_name == NULL)
+    return TID_ERROR;
+  strlcpy (exec_name, file_name, PGSIZE);
+
+  //----Extraemos el nombre del programa a ejeuctar:
+  char *tmp_file_name;
+
+  strtok_r(exec_name, " ", &tmp_file_name);
+
   /* Open executable file. */
-  file = filesys_open (file_name);
+  file = filesys_open (exec_name);
   if (file == NULL) 
     {
-      printf ("load: %s: open failed\n", file_name);
+      printf ("load: %s: open failed\n", exec_name);
       goto done; 
     }
 
@@ -252,7 +259,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
       || ehdr.e_phentsize != sizeof (struct Elf32_Phdr)
       || ehdr.e_phnum > 1024) 
     {
-      printf ("load: %s: error loading executable\n", file_name);
+      printf ("load: %s: error loading executable\n", exec_name);
       goto done; 
     }
 
@@ -315,24 +322,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
 
-
-  char *fn_copy = palloc_get_page (0);
-  if (fn_copy == NULL)
-    return TID_ERROR;
-  strlcpy (fn_copy, file_name, PGSIZE);
-
-  //----Extraemos el nombre del programa a ejeuctar:
-  char *tmp_file_name, *exec_name;
-  //tmp_file_name = palloc_get_page(0);
-
-  if (tmp_file_name == NULL)
-    return TID_ERROR;
-
-  //strlcpy (tmp_file_name, file_name, PGSIZE);
-  exec_name = strtok_r(fn_copy, " ", &tmp_file_name);
-
   /* Set up stack. */
-  if (!setup_stack (esp, exec_name, fn_copy))
+  if (!setup_stack (esp, exec_name, fname))
     goto done;
 
   /* Start address. */
@@ -480,8 +471,16 @@ setup_stack (void **esp, char* exec_name, char* args)
         int i = 0;
         int word_align;
 
+        cpArgs = palloc_get_page (PAL_USER | PAL_ZERO);
         setArgs = palloc_get_page (PAL_USER | PAL_ZERO);
         tmpArgs = palloc_get_page (PAL_USER | PAL_ZERO);
+
+        if (setArgs == NULL || tmpArgs == NULL || cpArgs == NULL){
+          palloc_free_page(setArgs);
+          palloc_free_page(tmpArgs);
+          success = false;
+          return success;
+        }
 
         if(args){
           strlcpy (cpArgs, args, PGSIZE);
@@ -497,12 +496,14 @@ setup_stack (void **esp, char* exec_name, char* args)
 
         void *paramAddr[noParam + 1];
 
-        while (noParam > 0 && (token = strtok_r(setArgs, " ", &setArgs))){
-          *esp -= strlen(token)+1;
-          memcpy(*esp, token, strlen(token) + 1);
-          paramAddr[i++] = *esp;
-        }
+        if (strlen(setArgs) > 0){
 
+          while (noParam > 0 && (token = strtok_r(setArgs, " ", &setArgs))){
+            *esp -= strlen(token)+1;
+            memcpy(*esp, token, strlen(token) + 1);
+            paramAddr[i++] = *esp;
+          }
+        }
         //3- Alinear a la palabra
         word_align =  (-1 * (int)*esp) % 4;
         *esp -= word_align;
@@ -528,8 +529,9 @@ setup_stack (void **esp, char* exec_name, char* args)
         *esp -= WORD_SIZE;
         memcpy(*esp, 0, WORD_SIZE);
 
-        return (0);
-
+        palloc_free_page(cpArgs);
+        palloc_free_page(setArgs);
+        palloc_free_page(tmpArgs);
       } else
         palloc_free_page (kpage);
     }
