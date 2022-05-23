@@ -483,6 +483,7 @@ init_thread (struct thread *t, const char *name, int priority)
   intr_set_level (old_level);
   #ifdef USERPROG
     sema_init(&t->wait_sema, 0);
+    list_init(&t->archivos);
     t->max_fd = 0;
   #endif
 }
