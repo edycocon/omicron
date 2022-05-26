@@ -12,6 +12,11 @@
 #include "list.h"
 
 static void syscall_handler (struct intr_frame *);
+static int memread_user (void *src, void *dst, size_t bytes);
+static int32_t get_user (const uint8_t *uaddr);
+static void fail_invalid_access(void);
+
+struct lock filesys_lock;
 
 struct stArchivo {
   int fd;
@@ -22,26 +27,29 @@ struct stArchivo {
 void
 syscall_init (void) 
 {
+  lock_init (&filesys_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  int sys_code = *(int*)f->esp;
+  int syscall_number;
   char* nombre_archivo;
+  ASSERT( sizeof(syscall_number) == 4 ); 
+  
+  memread_user(f->esp, &syscall_number, sizeof(syscall_number));
 
-  if (!validar_puntero(f->esp))
+  validar_puntero(f->esp);
+
+  switch (syscall_number)
   {
-    exit(-1);
-  }
-
-  switch (sys_code) {
-    case SYS_HALT:
-      shutdown_power_off();
-      break;
-    case SYS_EXIT:
-      exit(sys_code);
+  case SYS_HALT:
+    shutdown_power_off();
+    PANIC("executed an unreachable statement");
+    break;
+  case SYS_EXIT:
+    exit(syscall_number);
     break;
       case SYS_EXEC:
       /* code */
@@ -57,7 +65,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_OPEN:
       nombre_archivo = (char*)(*((int*)f->esp + 1));
-      f->eax = open(nombre_archivo);
+      f->eax = (uint32_t)open(nombre_archivo);
       break;
     case SYS_FILESIZE:
       /* code */
@@ -66,7 +74,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       /* code */
       break;
     case SYS_WRITE:
-      f->eax = write(f);
+      f->eax =  (uint32_t)sys_write(f);
       break;
     case SYS_SEEK:
       /* code */
@@ -80,9 +88,9 @@ syscall_handler (struct intr_frame *f UNUSED)
     
     default:
       break;
-  }
+    }
 
-  thread_exit ();
+  //thread_exit ();
 }
 
 void validar_puntero(void *puntero) {
@@ -111,9 +119,7 @@ void exit(int status) {
 
 int open(const char* file) {
 
-  if (!validar_puntero(file)) {
-    exit(-1);
-  }
+  validar_puntero(file);
 
   struct file* archivo_act;
   struct stArchivo* archivo_tmp = palloc_get_page(0);
@@ -122,9 +128,12 @@ int open(const char* file) {
     return -1;
   }
 
+  lock_acquire (&filesys_lock);
+
   archivo_act = file_open(file);
 
   if (archivo_act == NULL) {
+    lock_release (&filesys_lock);
     return -1;
   }
 
@@ -133,10 +142,12 @@ int open(const char* file) {
 
   list_push_back(&(thread_current()->archivos), &(archivo_tmp->elem));
 
-  return -1;
+  lock_release (&filesys_lock);
+
+  return archivo_tmp->fd;
 }
 
-int write (struct intr_frame *f UNUSED) {
+int sys_write (struct intr_frame *f UNUSED) {
   validar_puntero((int*)f->esp + 1);
   validar_puntero((int*)f->esp + 2);
   validar_puntero((int*)f->esp + 3);
@@ -144,27 +155,33 @@ int write (struct intr_frame *f UNUSED) {
   int fd = *((int*)f->esp + 1);  
   char* buffer = (char*)(*((int*)f->esp + 2)); 
   unsigned size = (*((int*)f->esp + 3));
+  int written_bytes = 0;
 
-  //Que hago cuando venga STDIN_FILENO
-  if (fd == STDOUT_FILENO){
+  lock_acquire(&filesys_lock);
+
+  if (fd == 1){
     putbuf(buffer, size);
+    lock_release (&filesys_lock);
     return size;
 
   } else {
-    struct stArchivo archivo = obtener_Archivo(fd);
-    int written_bytes = 0;
+    struct stArchivo *archivo = obtener_Archivo(fd);
 
     if (archivo == NULL) {
+      lock_release (&filesys_lock);
       return 0;
     }
-
-    written_bytes = file_write(archivo->archivo, buffer, size);
-
-    return written_bytes;
+  
+    written_bytes = (int)file_write(archivo->archivo, buffer, size);
+    
   }
+
+  lock_release (&filesys_lock);
+
+  return written_bytes;
 }
 
-struct stArchivo obtener_Archivo(int fd, enum fd_search_filter flag) {
+struct stArchivo* obtener_Archivo(int fd) {
   struct thread *t = thread_current();
   struct list_elem *e;
 
@@ -177,4 +194,41 @@ struct stArchivo obtener_Archivo(int fd, enum fd_search_filter flag) {
   }
 
   return NULL;
+}
+
+static int
+memread_user (void *src, void *dst, size_t bytes)
+{
+  int32_t value;
+  size_t i;
+  for(i=0; i<bytes; i++) {
+    value = get_user(src + i);
+    if(value == -1) // segfault or invalid memory access
+      fail_invalid_access();
+
+    *(char*)(dst + i) = value & 0xff;
+  }
+  return (int)bytes;
+}
+
+static int32_t
+get_user (const uint8_t *uaddr) {
+  // check that a user pointer `uaddr` points below PHYS_BASE
+  if (! ((void*)uaddr < PHYS_BASE)) {
+    return -1;
+  }
+
+  // as suggested in the reference manual, see (3.1.5)
+  int result;
+  asm ("movl $1f, %0; movzbl %1, %0; 1:"
+      : "=&a" (result) : "m" (*uaddr));
+  return result;
+}
+
+static void fail_invalid_access(void) {
+  if (lock_held_by_current_thread(&filesys_lock))
+    lock_release (&filesys_lock);
+
+  exit (-1);
+  NOT_REACHED();
 }
