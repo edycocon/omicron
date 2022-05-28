@@ -118,8 +118,14 @@ struct thread
     struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir;                  /* Page directory. */
+   /* Owned by userprog/process.c. */
+   uint32_t *pagedir;                  /* Page directory. */
+
+   //--Omicron definitions
+   struct thread *parent;
+   struct semaphore wait_sema;
+   struct list archivos;
+   int max_fd;
 #endif
 
     /* Owned by thread.c. */

@@ -214,6 +214,10 @@ thread_create (const char *name, int priority,
   thread_unblock (t);
   ceder_a_mayor_prioridad();
 
+  #ifdef USERPROG
+    t->parent = thread_current();
+  #endif
+
   return tid;
 }
 
@@ -302,6 +306,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
+  sema_up(&thread_current()->parent->wait_sema);
   process_exit ();
 #endif
 
@@ -539,6 +544,12 @@ init_thread (struct thread *t, const char *name, int priority)
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
+
+  #ifdef USERPROG
+    sema_init(&t->wait_sema, 0);
+    list_init(&t->archivos);
+    t->max_fd = 0;
+  #endif
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
