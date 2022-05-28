@@ -5,7 +5,7 @@
 
 void syscall_init (void);
 
-void validar_puntero (void *pointer);
+bool validar_puntero (void *pointer);
 void exit (int status);
 int open(const char* file);
 struct stArchivo* obtener_Archivo(int fd);
