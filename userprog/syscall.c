@@ -18,6 +18,8 @@ static void fail_invalid_access(void);
 
 struct lock filesys_lock;
 
+struct lock filesys_lock;
+
 struct stArchivo {
   int fd;
   struct file* archivo;
@@ -29,6 +31,7 @@ syscall_init (void)
 {
   lock_init (&filesys_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init (&filesys_lock);
 }
 
 static void
@@ -42,14 +45,17 @@ syscall_handler (struct intr_frame *f UNUSED)
 
   validar_puntero(f->esp);
 
-  switch (syscall_number)
-  {
-  case SYS_HALT:
-    shutdown_power_off();
-    PANIC("executed an unreachable statement");
-    break;
-  case SYS_EXIT:
-    exit(syscall_number);
+  switch (sys_code) {
+    case SYS_HALT:
+      shutdown_power_off();
+      PANIC ("executed an unreachable statement");
+      break;
+    case SYS_EXIT:
+      validar_puntero((int*)f->esp + 1);
+  
+      int status = *((int*)f->esp + 1);
+
+      exit(status);
     break;
       case SYS_EXEC:
       /* code */
@@ -106,9 +112,6 @@ void validar_puntero(void *puntero) {
 }
 
 void exit(int status) {
-  if (status != -1) {
-    validar_puntero(status);
-  }
 
   struct thread *tActual = thread_current();
 
