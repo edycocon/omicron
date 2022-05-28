@@ -107,13 +107,15 @@ syscall_handler (struct intr_frame *f UNUSED)
 bool validar_puntero(void *puntero) {
   uint32_t *pagina_usr = thread_current()->pagedir; 
 
-  if (!is_user_vaddr(puntero) || puntero == NULL) {
+  if (puntero == NULL || !is_user_vaddr(puntero)) {
     return false;
   }
   
   if (pagedir_get_page(pagina_usr, puntero) == NULL) {
     return false;;
   }
+  
+  return true;
 }
 
 void exit(int status) {
@@ -160,7 +162,7 @@ int sys_write (struct intr_frame *f UNUSED) {
   if(!validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2) || !validar_puntero((int*)f->esp + 3)){
     exit(-1);
   }
-  
+
   int fd = *((int*)f->esp + 1);  
   char* buffer = (char*)(*((int*)f->esp + 2)); 
   unsigned size = (*((int*)f->esp + 3));
