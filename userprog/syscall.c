@@ -37,8 +37,8 @@ syscall_handler (struct intr_frame *f UNUSED)
   int sys_code;
   char* nombre_archivo;
   ASSERT( sizeof(sys_code) == 4 ); 
-  
-  if(!validar_puntero((int*)f->esp) || !validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2) || !validar_puntero((int*)f->esp + 3)){
+ 
+  if(!validar_puntero(f->esp) || !validar_puntero(f->esp + 1) || !validar_puntero(f->esp + 2) || !validar_puntero(f->esp + 3)){
     exit(-1);
   }
 
