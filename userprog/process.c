@@ -69,7 +69,9 @@ start_process (void *file_name_)
   success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-  //palloc_free_page (file_name);
+  if(pg_ofs (file_name) == 0){
+    palloc_free_page (file_name);
+  }
   if (!success) 
     thread_exit ();
 
@@ -529,9 +531,16 @@ setup_stack (void **esp, char* exec_name, char* args)
         *esp -= WORD_SIZE;
         memset (*esp, 0, WORD_SIZE);
 
-        //palloc_free_page(cpArgs);
-        //palloc_free_page(setArgs);
-        //palloc_free_page(tmpArgs);
+
+        if(pg_ofs (cpArgs) == 0){
+          palloc_free_page(cpArgs);
+        }
+        if(pg_ofs (setArgs) == 0){
+          palloc_free_page(setArgs);
+        }
+        if(pg_ofs (tmpArgs) == 0){
+          palloc_free_page(tmpArgs);
+        }
       } else
         palloc_free_page (kpage);
     }

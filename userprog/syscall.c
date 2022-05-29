@@ -12,9 +12,6 @@
 #include "list.h"
 
 static void syscall_handler (struct intr_frame *);
-static int memread_user (void *src, void *dst, size_t bytes);
-static int32_t get_user (const uint8_t *uaddr);
-static void fail_invalid_access(void);
 
 struct lock filesys_lock;
 
@@ -37,15 +34,15 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  int syscall_number;
+  int sys_code;
   char* nombre_archivo;
-  ASSERT( sizeof(syscall_number) == 4 ); 
+  ASSERT( sizeof(sys_code) == 4 ); 
   
-  memread_user(f->esp, &syscall_number, sizeof(syscall_number));
-
-  if(!validar_puntero(f->esp)){
+  if(!validar_puntero((int*)f->esp) || !validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2) || !validar_puntero((int*)f->esp + 3)){
     exit(-1);
   }
+
+  sys_code = *(int*)f->esp;
 
   switch (sys_code) {
     case SYS_HALT:
@@ -75,6 +72,9 @@ syscall_handler (struct intr_frame *f UNUSED)
       /* code */
       break;
     case SYS_OPEN:
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
       nombre_archivo = (char*)(*((int*)f->esp + 1));
       f->eax = (uint32_t)open(nombre_archivo);
       break;
@@ -114,7 +114,7 @@ bool validar_puntero(void *puntero) {
   if (pagedir_get_page(pagina_usr, puntero) == NULL) {
     return false;;
   }
-  
+
   return true;
 }
 
@@ -128,14 +128,11 @@ void exit(int status) {
 }
 
 int open(const char* file) {
-  if(!validar_puntero(file)){
-    exit(-1);
-  }
-
   struct file* archivo_act;
   struct stArchivo* archivo_tmp = palloc_get_page(0);
 
   if (archivo_tmp == NULL) {
+    palloc_free_page (archivo_tmp);
     return -1;
   }
 
@@ -144,6 +141,7 @@ int open(const char* file) {
   archivo_act = file_open(file);
 
   if (archivo_act == NULL) {
+    palloc_free_page (archivo_tmp);
     lock_release (&filesys_lock);
     return -1;
   }
@@ -159,10 +157,6 @@ int open(const char* file) {
 }
 
 int sys_write (struct intr_frame *f UNUSED) {
-  if(!validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2) || !validar_puntero((int*)f->esp + 3)){
-    exit(-1);
-  }
-
   int fd = *((int*)f->esp + 1);  
   char* buffer = (char*)(*((int*)f->esp + 2)); 
   unsigned size = (*((int*)f->esp + 3));
@@ -196,50 +190,19 @@ struct stArchivo* obtener_Archivo(int fd) {
   struct thread *t = thread_current();
   struct list_elem *e;
 
-  for(e = list_begin(&t->archivos); e != list_end(&t->archivos); e = list_next(e)) {
-    struct stArchivo *archivo_temp = list_entry(e, struct stArchivo, elem);
+  if(fd <3){
+    return NULL;
+  }
 
-    if(archivo_temp->fd == fd) {
-      return archivo_temp;
+  if(!list_empty(&t->archivos)){
+    for(e = list_begin(&t->archivos); e != list_end(&t->archivos); e = list_next(e)) {
+      struct stArchivo *archivo_temp = list_entry(e, struct stArchivo, elem);
+
+      if(archivo_temp->fd == fd) {
+        return archivo_temp;
+      }
     }
   }
 
   return NULL;
-}
-
-static int
-memread_user (void *src, void *dst, size_t bytes)
-{
-  int32_t value;
-  size_t i;
-  for(i=0; i<bytes; i++) {
-    value = get_user(src + i);
-    if(value == -1) // segfault or invalid memory access
-      fail_invalid_access();
-
-    *(char*)(dst + i) = value & 0xff;
-  }
-  return (int)bytes;
-}
-
-static int32_t
-get_user (const uint8_t *uaddr) {
-  // check that a user pointer `uaddr` points below PHYS_BASE
-  if (! ((void*)uaddr < PHYS_BASE)) {
-    return -1;
-  }
-
-  // as suggested in the reference manual, see (3.1.5)
-  int result;
-  asm ("movl $1f, %0; movzbl %1, %0; 1:"
-      : "=&a" (result) : "m" (*uaddr));
-  return result;
-}
-
-static void fail_invalid_access(void) {
-  if (lock_held_by_current_thread(&filesys_lock))
-    lock_release (&filesys_lock);
-
-  exit (-1);
-  NOT_REACHED();
 }
