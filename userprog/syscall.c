@@ -137,10 +137,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       buffer = (char*)(*((int*)f->esp + 2));
       size = (*((int*)f->esp + 3));
 
-      if (!is_user_vaddr(buffer) || buffer == NULL){
-        exit(-1);
-      }
-
+      
       retvalret = read(fd, buffer, size);
       f->eax = (uint32_t) retvalret;
 
@@ -401,6 +398,7 @@ void close (struct intr_frame *f UNUSED) {
   lock_release (&filesys_lock);
 }
 
+/* Referencia Manual de pintos seccion 3.1.5*/
 
 static int32_t
 get_user (const uint8_t *uaddr) {
@@ -415,7 +413,7 @@ get_user (const uint8_t *uaddr) {
   return result;
 }
 
-
+/* Referencia  Manual de pintos seccion 3.1.5*/
 static bool
 put_user (uint8_t *udst, uint8_t byte) {
   if (! ((void*)udst < PHYS_BASE)) {
@@ -424,7 +422,6 @@ put_user (uint8_t *udst, uint8_t byte) {
 
   int error_code;
 
-  // as suggested in the reference manual, see (3.1.5)
   asm ("movl $1f, %0; movb %b2, %1; 1:"
       : "=&a" (error_code), "=m" (*udst) : "q" (byte));
   return error_code != -1;
@@ -471,7 +468,7 @@ int read(int fd, void *buffer, unsigned size){
 
       if(file_d && file_d->archivo) {
 
-      retval = file_read(file_d->archivo, buffer, size);
+        retval = file_read(file_d->archivo, buffer, size);
       
       }
       else {
@@ -480,7 +477,7 @@ int read(int fd, void *buffer, unsigned size){
     }
 
     lock_release (&filesys_lock);
-    return -1;
+    return retval;
 }
 
 
