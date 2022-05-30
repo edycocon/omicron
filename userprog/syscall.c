@@ -369,13 +369,11 @@ void close (struct intr_frame *f UNUSED) {
 
   lock_acquire (&filesys_lock);
   struct stArchivo* archivo_st = obtener_Archivo(fd);
-  archivo_tmp = archivo_st->archivo;
 
-  if(archivo_st && archivo_tmp) {
-    file_close(archivo_tmp);
+  if(archivo_st && archivo_st->archivo) {
+    file_close(archivo_st->archivo);
     list_remove(&(archivo_st->elem));
     palloc_free_page(archivo_st);
   }
-
   lock_release (&filesys_lock);
 }
