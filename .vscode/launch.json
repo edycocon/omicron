@@ -11,12 +11,12 @@
         "remote": true,
         "target": ":1234",
         "env": {
-          "GDBMACROS": "/home/jferrer/omicron/misc/gdb-macros"
+          "GDBMACROS": "/home/jvelasquez/omicron/misc/gdb-macros"
         },
-        "debugger_args": ["-x", "/home/jferrer/omicron/misc/gdb-macros"],
-        "executable": "/home/jferrer/omicron/userprog/build/kernel.o",
+        "debugger_args": ["-x", "/home/jvelasquez/omicron/misc/gdb-macros"],
+        "executable": "/home/jvelasquez/omicron/userprog/build/kernel.o",
         // "cwd": "${workspaceRoot}",
-        "cwd": "/home/jferrer/omicron/userprog/build",
+        "cwd": "/home/jvelasquez/omicron/userprog/build",
         "valuesFormatting": "prettyPrinters",//"parseText",
         "setupCommands": [
           {

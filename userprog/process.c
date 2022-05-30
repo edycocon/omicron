@@ -70,6 +70,7 @@ process_execute (const char *file_name)
   tid = thread_create (exec_name, PRI_DEFAULT, start_process, pcb);
   if (tid == TID_ERROR) {
     palloc_free_page (exec_name);
+    return TID_ERROR;
   } 
   
   sema_down(&pcb->semaforo_inicializacion);
@@ -122,7 +123,7 @@ start_process (void *pcb_)
   sema_up(&pcb->semaforo_inicializacion);
 
   if (!success) 
-    thread_exit ();
+    exit(-1);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

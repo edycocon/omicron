@@ -263,6 +263,12 @@ int write (struct intr_frame *f UNUSED) {
   unsigned size = (*((int*)f->esp + 3));
   int written_bytes = 0;
 
+  for(int i=0; i<sizeof(buffer); i++) {
+    if(!validar_puntero(buffer + i)){
+      exit(-1);
+    }
+  }
+
   lock_acquire(&filesys_lock);
   if (fd == 0){
     exit(-1);
