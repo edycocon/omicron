@@ -171,19 +171,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax =  (uint32_t)write(f);
       break;
     case SYS_SEEK:
-      if(!validar_puntero((int*)f->esp + 1)){
-        exit(-1);
-      }
-
-      if(!validar_puntero((int*)f->esp + 2)){
-        exit(-1);
-      }
       seek(f);
       break;
     case SYS_TELL:
-      if(!validar_puntero((int*)f->esp + 1)){
-        exit(-1);
-      }
+      f->eax = tell(f);
       break;
     case SYS_CLOSE:
       close(f);
@@ -526,4 +517,19 @@ void seek (struct intr_frame *f UNUSED) {
   lock_release (&filesys_lock);
 }
 
+unsigned tell (struct intr_frame *f UNUSED) {
+  unsigned result;
+  if(!validar_puntero((int*)f->esp + 1)){
+    exit(-1);
+  }
 
+  int fd = (int*)f->esp + 1;
+
+  lock_acquire (&filesys_lock);
+  struct stArchivo* archivo_st = obtener_Archivo(fd);
+  
+  result = file_tell(archivo_st->archivo);
+  lock_release(&filesys_lock);
+  
+  return result;
+}

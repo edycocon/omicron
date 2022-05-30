@@ -16,5 +16,6 @@ bool create (struct intr_frame *f);
 bool remove (struct intr_frame *f);
 int filesize (struct intr_frame *f);
 void close (struct intr_frame *f);
+unsigned tell (struct intr_frame *f);
 
 #endif /* userprog/syscall.h */
