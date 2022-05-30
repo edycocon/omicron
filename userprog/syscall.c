@@ -153,11 +153,8 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
       break;
     case SYS_CLOSE:
-      if(!validar_puntero((int*)f->esp + 1)){
-        exit(-1);
-      }
+      close(f);
       break;
-    
     default:
       exit(-1);
       break;
@@ -205,7 +202,7 @@ int open(const char* file) {
 
   lock_acquire (&filesys_lock);
 
-  archivo_act = file_open(file);
+  archivo_act = filesys_open(file);
 
   if (archivo_act == NULL) {
     palloc_free_page (archivo_tmp);
@@ -279,7 +276,7 @@ struct stArchivo* obtener_Archivo(int fd) {
   return NULL;
 }
 
-
+	
 int wait(int pid) {
   return process_wait(pid);
 }
@@ -367,19 +364,18 @@ void close (struct intr_frame *f UNUSED) {
   if(!validar_puntero((int*)f->esp + 1)){
     exit(-1);
   }
-  lock_acquire(&filesys_lock);
+  
   int fd = *((int*)f->esp + 1);
 
-  struct stArchivo *archivo_st = obtener_Archivo(fd);
+  lock_acquire (&filesys_lock);
+  struct stArchivo* archivo_st = obtener_Archivo(fd);
   archivo_tmp = archivo_st->archivo;
 
-  if(archivo_st != NULL){
-    
-    file_close(archivo_tmp);    
-    //list_remove(&(archivo_st->elem));
-    //palloc_free_page(archivo_tmp);
-    //free(archivo_st);
-  } 
+  if(archivo_st && archivo_tmp) {
+    file_close(archivo_tmp);
+    list_remove(&(archivo_st->elem));
+    palloc_free_page(archivo_st);
+  }
 
-  lock_release(&filesys_lock);
+  lock_release (&filesys_lock);
 }
