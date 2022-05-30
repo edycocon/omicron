@@ -37,6 +37,7 @@ syscall_handler (struct intr_frame *f UNUSED)
   int sys_code;
   char* nombre_archivo;
   char* comando;
+  void* cmd;
   ASSERT( sizeof(sys_code) == 4 ); 
  
   
@@ -68,13 +69,20 @@ syscall_handler (struct intr_frame *f UNUSED)
     break;
       case SYS_EXEC:
 
-        if(!validar_puntero((int*)f->esp + 1)){
-          exit(-1);
+        cmd = (void*)(*((int*)f->esp + 1));
+
+        for(int i=0; i<sizeof(cmd); i++) {
+          if(!validar_puntero(f->esp + 4 + i)){
+            exit(-1);
+          }
         }
-        comando = (char*)(*((int*)f->esp + 1)); 
-        
-        if(!validar_puntero(comando)){
-          exit(-1);
+
+        comando = (char*)(*((int*)f->esp + 1));
+
+        for(int i=0; i<sizeof(comando); i++) {
+          if(!validar_puntero(comando + i)){
+            exit(-1);
+          }
         }
 
         f->eax = exec(comando);
