@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <list.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -29,10 +30,19 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *exec_name;
+  char *copiacommand = NULL;
   tid_t tid;
+  struct control_proceso *pcb = malloc(sizeof(struct control_proceso));
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
+  copiacommand = palloc_get_page (0);
+  if (copiacommand == NULL) {
+    return TID_ERROR;
+  }
+  strlcpy (copiacommand, file_name, PGSIZE);
+
+
   exec_name = palloc_get_page (0);
   if (exec_name == NULL) {
     return TID_ERROR;
@@ -44,22 +54,56 @@ process_execute (const char *file_name)
 
   strtok_r(exec_name, " ", &tmp_file_name);
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (exec_name, PRI_DEFAULT, start_process, file_name);
+
+  pcb->pid = (int) -2;
+  pcb->thread_padre = thread_current();
+  pcb->file_name = copiacommand;
+  pcb->esperando = false;
+  pcb->finalizado = false;
+  pcb->sindependencia = false;
+  pcb->retval = -1; 
+
+  sema_init(&pcb->semaforo_inicializacion, 0);
+  sema_init(&pcb->semaforo_espera, 0);
+
+  /* Create a new thread to tid FILE_NAME. */
+  tid = thread_create (exec_name, PRI_DEFAULT, start_process, pcb);
   if (tid == TID_ERROR) {
     palloc_free_page (exec_name);
   } 
+  
+  sema_down(&pcb->semaforo_inicializacion);
+
+  //if(exec_name) {
+    //palloc_free_page (exec_name);
+  //}
+
+  if (tid >= 0 && pcb->pid >= 0)
+  {
+    list_push_back (&(thread_current()->procesos_hijos), &pcb->elem);
+  }
+
+
+ //if(exec_name) {
+    //palloc_free_page (exec_name);
+  //}
+
+
   return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process (void *file_name_)
+start_process (void *pcb_)
 {
-  char *file_name = file_name_;
+
+  struct thread *tactual = thread_current();
+  struct control_proceso *pcb = pcb_;
+  char *file_name = (char*)pcb->file_name;
   struct intr_frame if_;
   bool success;
+
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -72,6 +116,11 @@ start_process (void *file_name_)
   if(pg_ofs (file_name) == 0){
     palloc_free_page (file_name);
   }
+
+  pcb->pid = success ? (tactual->tid) : -1;
+  tactual->pcb = pcb;
+  sema_up(&pcb->semaforo_inicializacion);
+
   if (!success) 
     thread_exit ();
 
@@ -97,8 +146,50 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  sema_down(&thread_current()->wait_sema);
-  return -1;
+  struct thread *t = thread_current ();
+  struct list *lista_hijos = &(t->procesos_hijos);
+  struct control_proceso *child_pcb = NULL;
+  struct list_elem *it = NULL;
+
+  if (!list_empty(lista_hijos)) {
+    for (it = list_front(lista_hijos); it != list_end(lista_hijos); it = list_next(it)) {
+      struct control_proceso *pcb = list_entry(it, struct control_proceso, elem);
+      if(pcb->pid == child_tid) { 
+        child_pcb = pcb;
+        break;
+      }
+    }
+  }
+
+
+  if (child_pcb == NULL) {
+    return -1;
+  }
+
+  if (child_pcb->esperando) {
+    return -1; 
+  }
+  else {
+    child_pcb->esperando = true;
+  }
+
+  if (! child_pcb->finalizado) {
+    sema_down(& (child_pcb->semaforo_espera));
+  }
+  ASSERT (child_pcb->finalizado == true);
+
+
+  ASSERT (it != NULL);
+  list_remove (it);
+
+  int retcode = child_pcb->retval;
+
+  if(child_pcb) {
+    //palloc_free_page (child_pcb);
+  }
+
+  return retcode;
+
 }
 
 /* Free the current process's resources. */
@@ -107,6 +198,27 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  struct list *lista_hijos = &cur->procesos_hijos;
+  while (!list_empty(lista_hijos)) {
+    struct list_elem *e = list_pop_front (lista_hijos);
+    struct control_proceso *pcb;
+    pcb = list_entry(e, struct control_proceso, elem);
+    if (pcb->finalizado == true) {
+      palloc_free_page (pcb);
+    } else {
+      pcb->sindependencia = true;
+      pcb->thread_padre = NULL;
+    }
+  }
+  
+  cur->pcb->finalizado = true;
+  bool dependencia = cur->pcb->sindependencia;
+  sema_up (&cur->pcb->semaforo_espera);
+
+  if (dependencia) {
+    palloc_free_page (&cur->pcb);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

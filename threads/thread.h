@@ -15,6 +15,21 @@ enum thread_status
     THREAD_DYING        /* About to be destroyed. */
   };
 
+
+struct control_proceso {
+  int pid;                 
+  struct list_elem elem;    
+  struct thread* thread_padre;    
+  bool esperando;
+  bool finalizado;
+  bool sindependencia;
+  int32_t retval;     
+  struct semaphore semaforo_inicializacion;  
+  struct semaphore semaforo_espera;
+  char* file_name;
+};
+
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
@@ -108,6 +123,9 @@ struct thread
    struct thread *parent;
    struct semaphore wait_sema;
    struct list archivos;
+   struct list procesos_hijos; 
+   struct control_proceso *pcb;
+   bool hijo_inicializado;
    int max_fd;
 //#endif
 

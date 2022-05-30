@@ -36,11 +36,18 @@ syscall_handler (struct intr_frame *f UNUSED)
 {
   int sys_code;
   char* nombre_archivo;
+  char* comando;
   ASSERT( sizeof(sys_code) == 4 ); 
  
-  if(!validar_puntero(f->esp) || !validar_puntero(f->esp + 1) || !validar_puntero(f->esp + 2) || !validar_puntero(f->esp + 3)){
+  
+  if(!validar_puntero(f->esp + 1) || !validar_puntero(f->esp + 2) || !validar_puntero(f->esp + 3)){
     exit(-1);
   }
+
+  if(!validar_puntero((int*)f->esp)){
+    exit(-1);
+  }
+
 
   sys_code = *(int*)f->esp;
 
@@ -60,16 +67,36 @@ syscall_handler (struct intr_frame *f UNUSED)
       exit(status);
     break;
       case SYS_EXEC:
-      /* code */
-      break;
+
+        if(!validar_puntero((int*)f->esp + 1)){
+          exit(-1);
+        }
+        comando = (char*)(*((int*)f->esp + 1)); 
+        
+        if(!validar_puntero(comando)){
+          exit(-1);
+        }
+
+        f->eax = exec(comando);
+        break;
     case SYS_WAIT:
-      /* code */
+
+      if (!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
+
+      int pid = *((int*)f->esp + 1); 
+      int retval = wait(pid);
+      f->eax = (uint32_t)retval;
+
       break;
     case SYS_CREATE:
-      /* code */
+      
+      f->eax = create(f);
       break;
+
     case SYS_REMOVE:
-      /* code */
+      f->eax = remove(f);
       break;
     case SYS_OPEN:
       if(!validar_puntero((int*)f->esp + 1)){
@@ -79,25 +106,60 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = (uint32_t)open(nombre_archivo);
       break;
     case SYS_FILESIZE:
-      /* code */
+      f->eax = filesize(f);
       break;
     case SYS_READ:
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
+
+      if(!validar_puntero((int*)f->esp + 2)){
+        exit(-1);
+      }
+
+      if(!validar_puntero((int*)f->esp + 3)){
+        exit(-1);
+      }
+
       /* code */
       break;
     case SYS_WRITE:
-      f->eax =  (uint32_t)sys_write(f);
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
+
+      if(!validar_puntero((int*)f->esp + 2)){
+        exit(-1);
+      }
+
+      if(!validar_puntero((int*)f->esp + 3)){
+        exit(-1);
+      }
+
+      f->eax =  (uint32_t)write(f);
       break;
     case SYS_SEEK:
-      /* code */
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
+
+      if(!validar_puntero((int*)f->esp + 2)){
+        exit(-1);
+      }
       break;
     case SYS_TELL:
-      /* code */
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
       break;
     case SYS_CLOSE:
-      /* code */
+      if(!validar_puntero((int*)f->esp + 1)){
+        exit(-1);
+      }
       break;
     
     default:
+      exit(-1);
       break;
     }
 
@@ -121,6 +183,11 @@ bool validar_puntero(void *puntero) {
 void exit(int status) {
 
   struct thread *tActual = thread_current();
+
+  struct control_proceso *pcb = thread_current()->pcb;
+  if(pcb != NULL) {
+    pcb->retval = status;
+  }
 
   printf("%s: exit(%d)\n", tActual->name, status);
 
@@ -156,19 +223,23 @@ int open(const char* file) {
   return archivo_tmp->fd;
 }
 
-int sys_write (struct intr_frame *f UNUSED) {
+int write (struct intr_frame *f UNUSED) {
+  if(!validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2) || !validar_puntero((int*)f->esp + 3)){
+    exit(-1);
+  }
+
   int fd = *((int*)f->esp + 1);  
   char* buffer = (char*)(*((int*)f->esp + 2)); 
   unsigned size = (*((int*)f->esp + 3));
   int written_bytes = 0;
 
   lock_acquire(&filesys_lock);
-
-  if (fd == 1){
+  if (fd == 0){
+    exit(-1);
+  } else if (fd == 1) {
     putbuf(buffer, size);
     lock_release (&filesys_lock);
     return size;
-
   } else {
     struct stArchivo *archivo = obtener_Archivo(fd);
 
@@ -185,6 +256,7 @@ int sys_write (struct intr_frame *f UNUSED) {
 
   return written_bytes;
 }
+
 
 struct stArchivo* obtener_Archivo(int fd) {
   struct thread *t = thread_current();
@@ -205,4 +277,109 @@ struct stArchivo* obtener_Archivo(int fd) {
   }
 
   return NULL;
+}
+
+
+int wait(int pid) {
+  return process_wait(pid);
+}
+
+
+int exec(const char *cmdline) {
+
+  lock_acquire (&filesys_lock); 
+  tid_t pid = process_execute(cmdline);
+  lock_release (&filesys_lock);
+  return pid;
+}
+
+
+bool create (struct intr_frame *f UNUSED) {
+  bool result = false;
+  
+  if(!validar_puntero((int*)f->esp + 1) || !validar_puntero((int*)f->esp + 2)){
+    exit(-1);
+  }
+  
+  lock_acquire(&filesys_lock);
+  char *nombre = (char*)(*((int*)f->esp + 1));
+
+  if(!validar_puntero(nombre)){
+    exit(-1);
+  }
+
+  unsigned initial_size = (*((int*)f->esp + 2));;
+
+  result = filesys_create(nombre, initial_size);
+  lock_release(&filesys_lock);
+
+  return result;
+
+}
+
+bool remove (struct intr_frame *f UNUSED) {
+  bool result = false;
+
+  if(!validar_puntero((int*)f->esp + 1)){
+    exit(-1);
+  }
+
+  lock_acquire(&filesys_lock);
+  char *nombre = (char*)(*((int*)f->esp + 1));
+
+  if(!validar_puntero(nombre)){
+    exit(-1);
+  }
+
+  result = filesys_remove(nombre);
+  lock_release(&filesys_lock);
+
+  return result;
+
+}
+
+int filesize (struct intr_frame *f UNUSED) {
+  if(!validar_puntero((int*)f->esp + 1)){
+    exit(-1);
+  }
+
+  int fd = *((int*)f->esp + 1); 
+  int size = 0;
+
+  struct stArchivo *archivo_st = obtener_Archivo(fd);
+
+  if (archivo_st == NULL) {
+    lock_release (&filesys_lock);
+    return 0;
+  }
+
+  struct file *archivo = archivo_st->archivo;
+  
+  lock_acquire(&filesys_lock);
+  size = file_length(archivo);
+  lock_release(&filesys_lock);
+
+  return size;
+}
+
+void close (struct intr_frame *f UNUSED) {
+  struct file* archivo_tmp;
+  if(!validar_puntero((int*)f->esp + 1)){
+    exit(-1);
+  }
+  lock_acquire(&filesys_lock);
+  int fd = *((int*)f->esp + 1);
+
+  struct stArchivo *archivo_st = obtener_Archivo(fd);
+  archivo_tmp = archivo_st->archivo;
+
+  if(archivo_st != NULL){
+    
+    file_close(archivo_tmp);    
+    //list_remove(&(archivo_st->elem));
+    //palloc_free_page(archivo_tmp);
+    //free(archivo_st);
+  } 
+
+  lock_release(&filesys_lock);
 }

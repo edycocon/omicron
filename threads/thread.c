@@ -484,7 +484,10 @@ init_thread (struct thread *t, const char *name, int priority)
   #ifdef USERPROG
     sema_init(&t->wait_sema, 0);
     list_init(&t->archivos);
-    t->max_fd = 0;
+    t->max_fd = 3;
+    list_init(&t->procesos_hijos);
+    t->hijo_inicializado=false;
+    t->pcb = NULL;
   #endif
 }
 
