@@ -107,10 +107,23 @@ syscall_handler (struct intr_frame *f UNUSED)
       f->eax = remove(f);
       break;
     case SYS_OPEN:
-      if(!validar_puntero((int*)f->esp + 1)){
-        exit(-1);
+
+      cmd = (void*)(*((int*)f->esp + 1));
+
+      for(int i=0; i<sizeof(cmd); i++) {
+        if(!validar_puntero(f->esp + 4 + i)){
+          exit(-1);
+        }
       }
+
       nombre_archivo = (char*)(*((int*)f->esp + 1));
+
+      for(int i=0; i<sizeof(nombre_archivo); i++) {
+        if(!validar_puntero(nombre_archivo + i)){
+          exit(-1);
+        }
+      }
+
       f->eax = (uint32_t)open(nombre_archivo);
       break;
     case SYS_FILESIZE:
